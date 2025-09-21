@@ -1,0 +1,24 @@
+{
+  "name": "prospecting-automation-script",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/larsGroennegaard/prospecting-automation-script.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/larsGroennegaard/prospecting-automation-script/issues"
+  },
+  "homepage": "https://github.com/larsGroennegaard/prospecting-automation-script#readme",
+  "devDependencies": {
+    "@types/google-apps-script": "^2.0.3"
+  }
+}
