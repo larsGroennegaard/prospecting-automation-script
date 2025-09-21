@@ -31,22 +31,3 @@ function onOpen() {
     .addSubMenu(adminMenu) // Add the Admin menu as a submenu
     .addToUi();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**** ===== SETUP UTILITIES ===== ****/
-
-
-/**** ===== ADMIN & SETUP ===== ****/
-
