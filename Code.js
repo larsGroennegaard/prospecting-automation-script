@@ -12,7 +12,9 @@ function onOpen() {
   
   // First, create the submenu for Admin tasks
   const adminMenu = ui.createMenu('Admin')
-      .addItem('Set API Keys', 'setupApiKeys');
+      .addItem('Set API Keys', 'setupApiKeys')
+      .addItem('Rebuild Content Library', 'cl_buildLibrary'); 
+
 
   // Then, create the main menu and add all items, including the submenu
   ui.createMenu('Prospecting')
