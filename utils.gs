@@ -1,4 +1,3 @@
-/**** ===== UTILS ===== ****/
 function cfg_(key) {
   // First, check the secure, private storage for the current user.
   const userProperties = PropertiesService.getUserProperties();

@@ -31,19 +31,6 @@ function onOpen() {
 }
 
 
-
-/**
- * Reads the 'Content Library' sheet and formats it as a JSON string for the AI prompt.
- * @returns {string} A JSON string representing the content library, or an empty string.
- */
-
-
-
-
-
-
-
-
 function apolloGet_(url) {
   const apiKey = cfg_('APOLLO_API_KEY');
   const headers = { 'x-api-key': apiKey, 'Content-Type': 'application/json' };
