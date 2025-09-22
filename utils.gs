@@ -85,20 +85,22 @@ function ensureContactsHeader_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(CON_SHEET);
   if (!sh) throw new Error(`Missing sheet: ${CON_SHEET}`);
   
-  // Final header with 18 columns, including 'selected'
+  // Final header with 20 columns, including assignment columns
   const expected = [
     'selected', 'company_domain', 'contact_name', 'title', 'stage', 'email', 
     'apollo_contact_id', 'hubspot_contact_id', 'contact_story_30_days', 'gem_subject', 'gem_body', 'status', 
     'email_1_subject', 'email_1_body', 'email_2_subject', 'email_2_body', 
-    'email_3_subject', 'email_3_body'
+    'email_3_subject', 'email_3_body', 'assigned_sending_email', 'assigned_sender_name'
   ];
 
   if (sh.getLastRow() === 0) {
     sh.appendRow(expected);
-    // Automatically insert checkboxes for any new rows in the 'selected' column
     sh.getRange("A2:A").insertCheckboxes(); 
   } else {
-    const headers = sh.getRange(1, 1, 1, expected.length).getValues()[0].map(String);
+    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
+    if (headers.length < expected.length) {
+       sh.getRange(1, 1, 1, expected.length).setValues([expected]);
+    }
     const ok = expected.every((h, i) => (headers[i] || '').toLowerCase() === h.toLowerCase());
     if (!ok) throw new Error(`First row of ${CON_SHEET} must be: ${expected.join(' | ')}`);
   }

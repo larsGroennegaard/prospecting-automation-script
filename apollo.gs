@@ -90,7 +90,6 @@ function apolloSaveAsContact_(personId) {
   return apolloPost_(url, payload);
 }
 
-/**** =====  APOLLO: FIND CONTACTS ===== ****/
 function apolloFindContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
 
@@ -273,7 +272,6 @@ function apolloFindContactsForAccounts() {
   ui.alert(`Apollo contact search complete. Appended a total of ${totalAppended} new contacts.`);
 }
 
-/**** ===== APOLLO: PUSH AI MESSAGES ===== ****/
 function apolloPushMessages() {
   const ui = SpreadsheetApp.getUi();
   const conSh = SpreadsheetApp.getActive().getSheetByName(CON_SHEET);
@@ -332,72 +330,57 @@ function apolloPushMessages() {
   ui.alert(`Push to Apollo complete.\n\nUpdated: ${processedCount}\nFailed: ${errorCount}\nSkipped: ${skippedCount}`);
 }
 
-/**** ===== APOLLO: ADD CONTACTS TO SEQUENCE ===== ****/
 function apolloAddContactsToSequence() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const accSh = ss.getSheetByName(ACC_SHEET);
   const conSh = ss.getSheetByName(CON_SHEET);
-  const mapSh = ss.getSheetByName(MAILBOX_MAP_SHEET);
 
   if (conSh.getLastRow() < 2) { ui.alert('No contacts to process.'); return; }
   
+  // --- NEW: Get column index for assigned email ---
+  const headers = conSh.getRange(1, 1, 1, conSh.getLastColumn()).getValues()[0];
+  const assignedEmailColIdx = headers.indexOf('assigned_sending_email');
+  if (assignedEmailColIdx === -1) {
+    ui.alert('Error: Could not find the "assigned_sending_email" column.');
+    return;
+  }
+
   const allContacts = conSh.getRange(2, 1, conSh.getLastRow() - 1, conSh.getLastColumn()).getValues();
   const selectedContacts = allContacts.filter(row => row[0] === true);
 
-  if (selectedContacts.length === 0) {
-    ui.alert('No contacts are selected.');
-    return;
-  }
+  if (selectedContacts.length === 0) { ui.alert('No contacts are selected.'); return; }
   
   const response = ui.alert('Add Contacts to Apollo Sequence?', `This will add ${selectedContacts.length} selected contacts to the sequence. Continue?`, ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) return;
 
-  if (!mapSh || mapSh.getLastRow() < 2) { /* ... */ } // This part is correct
   const apolloMailboxMap = getApolloMailboxMap_();
   const sequenceId = cfg_('APOLLO_SEQUENCE_ID');
-  if (apolloMailboxMap.size === 0) { /* ... */ } // This part is correct
+  if (apolloMailboxMap.size === 0) { ui.alert('Could not fetch Apollo mailboxes. Check API key and permissions.'); return; }
 
-  const ownerToMailboxMap = new Map();
-  const mappingValues = mapSh.getRange(2, 1, mapSh.getLastRow() - 1, 2).getValues();
-  mappingValues.forEach(row => {
-    const ownerEmail = String(row[0]).toLowerCase().trim();
-    const sendingEmail = String(row[1]).toLowerCase().trim();
-    if (ownerEmail && sendingEmail) ownerToMailboxMap.set(ownerEmail, sendingEmail);
-  });
-  
-  const companyToOwnerMap = new Map();
-  if (accSh.getLastRow() > 1) { /* ... */ } // This part is correct
-
+  // --- NEW: Simplified grouping logic ---
   const contactsBySender = new Map();
   allContacts.forEach((row, index) => {
-    const isSelected = row[0];       // col A
-    const status = row[11];          // col L
-    const apolloContactId = row[6];  // col G
-    const domain = String(row[1]).toLowerCase().trim();
+    const isSelected = row[0];
+    const status = row[11];
+    const apolloContactId = row[6];
+    const assignedEmail = row[assignedEmailColIdx]; // Read from the new column
 
-    if (isSelected && apolloContactId && status.includes('from_apollo_contact') && !status.includes('apollo_sequenced')) {
-      const ownerEmail = companyToOwnerMap.get(domain);
-      if (ownerEmail) {
-        const sendingEmail = ownerToMailboxMap.get(ownerEmail);
-        if (sendingEmail) {
-          if (!contactsBySender.has(sendingEmail)) contactsBySender.set(sendingEmail, []);
-          contactsBySender.get(sendingEmail).push({ id: apolloContactId, rowIndex: index + 2 });
-        } else {
-          const currentStatus = conSh.getRange(index + 2, 12).getValue();
-          conSh.getRange(index + 2, 12).setValue(`${currentStatus};sequence_failed(no_mapping)`);
-        }
+    if (isSelected && apolloContactId && assignedEmail && status.includes('from_apollo_contact') && !status.includes('apollo_sequenced')) {
+      if (!contactsBySender.has(assignedEmail)) {
+        contactsBySender.set(assignedEmail, []);
       }
+      contactsBySender.get(assignedEmail).push({ id: apolloContactId, rowIndex: index + 2 });
     }
   });
 
   let totalSuccess = 0, totalFailed = 0;
   for (const [sendingEmail, contacts] of contactsBySender.entries()) {
-    const mailboxId = apolloMailboxMap.get(sendingEmail);
+    const mailboxId = apolloMailboxMap.get(sendingEmail.toLowerCase());
     if (!mailboxId) {
       contacts.forEach(c => {
         const currentStatus = conSh.getRange(c.rowIndex, 12).getValue();
         conSh.getRange(c.rowIndex, 12).setValue(`${currentStatus};sequence_failed(no_mailbox)`);
+        totalFailed++;
       });
       continue;
     }
@@ -416,6 +399,7 @@ function apolloAddContactsToSequence() {
       contacts.forEach(c => {
         const currentStatus = conSh.getRange(c.rowIndex, 12).getValue();
         conSh.getRange(c.rowIndex, 12).setValue(`${currentStatus};sequence_failed(api_error)`);
+        totalFailed++;
       });
     }
     SpreadsheetApp.flush();
