@@ -4,7 +4,6 @@ function generateAiMessages() {
   const conSh = ss.getSheetByName(CON_SHEET);
   if (conSh.getLastRow() < 2) { ui.alert('No contacts to process.'); return; }
 
-  // --- NEW: Get column indices ---
   const headers = conSh.getRange(1, 1, 1, conSh.getLastColumn()).getValues()[0];
   const assignedSenderNameColIdx = headers.indexOf('assigned_sender_name');
   if (assignedSenderNameColIdx === -1) {
@@ -32,6 +31,7 @@ function generateAiMessages() {
   const dreamdataUseCases = (() => { try { return cfg_('DREAMDATA_USE_CASES'); } catch(e) { return 'No use cases provided.'; } })();
   const contentLibraryJson = getContentLibrary_();
 
+  // This map is still needed for company-level data, but not for sender details.
   const companyData = new Map();
   if (accSh.getLastRow() > 1) {
     const accValues = accSh.getRange(2, 1, accSh.getLastRow() - 1, 8).getValues();
@@ -42,7 +42,6 @@ function generateAiMessages() {
           company_name: row[2],
           signals_last_7_days: row[4],
           signals_last_30_days: row[5],
-          owner_email: String(row[6]).toLowerCase().trim(),
           account_story: row[7] || 'No specific account journey data available.',
         });
       }
@@ -54,10 +53,9 @@ function generateAiMessages() {
     const isSelected = row[0];
     const subjectCell = row[12];
     
-    // --- NEW: Read the assigned sender name directly from the row ---
     const assignedSenderName = row[assignedSenderNameColIdx];
 
-    if (isSelected && subjectCell === '' && assignedSenderName) { // Only process if a sender has been assigned
+    if (isSelected && subjectCell === '' && assignedSenderName) {
       const placeholders = {
         '{contact_name}': row[2],
         '{title}': row[3],
@@ -66,7 +64,7 @@ function generateAiMessages() {
         '{contact_story_30_days}': row[8] || 'No specific contact journey data available.',
         '{my_company_name}': myCompanyName,
         '{my_value_proposition}': myValueProp,
-        '{email_sender}': assignedSenderName, // <-- USE THE ASSIGNED NAME
+        '{email_sender}': assignedSenderName, // This will no longer be overwritten
         '{content_library}': contentLibraryJson,
         '{dreamdata_positioning}': dreamdataPositioning,
         '{dreamdata_use_cases}': dreamdataUseCases,
@@ -77,6 +75,8 @@ function generateAiMessages() {
       placeholders['{signals_last_7_days}'] = companyInfo.signals_last_7_days || 0;
       placeholders['{signals_last_30_days}'] = companyInfo.signals_last_30_days || 0;
       placeholders['{account_story_30_days}'] = companyInfo.account_story || 'No specific account journey data available.';
+      
+      // The old, incorrect logic that overwrote the sender name has been REMOVED.
       
       let finalPrompt = sequencePromptTemplate;
       for (const key in placeholders) {
@@ -102,11 +102,10 @@ function generateAiMessages() {
       conSh.getRange(index + 2, 13, 1, 6).setValues([outputs]);
       processedCount++;
     } else if (isSelected && subjectCell === '' && !assignedSenderName) {
-        // Optional: Mark rows that were skipped because they had no sender assigned
         conSh.getRange(index + 2, 12).setValue('skipped_no_sender_assigned');
     }
   });
-  ui.alert(`AI sequence generation complete. Processed ${processedCount} selected contacts.`);
+  ui.alert('AI sequence generation complete.', `Processed ${processedCount} selected contacts.`, ui.ButtonSet.OK);
 }
 
 function geminiGenerate_(prompt) {
