@@ -28,4 +28,3 @@ function onOpen() {
     .addSubMenu(adminMenu)
     .addToUi();
 }
-}
