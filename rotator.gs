@@ -113,5 +113,5 @@ function assignSendersForRotation() {
     }
   }
 
-  ui.alert('Assignment Complete', `Assigned sender personas to ${assignmentsMade} contacts.`);
+  ui.alert('Assignment Complete', `Assigned sender personas to ${assignmentsMade} contacts.`, ui.ButtonSet.OK);
 }
