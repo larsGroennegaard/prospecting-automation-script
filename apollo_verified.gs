@@ -1,8 +1,5 @@
 /**
  * @OnlyCurrentDoc
- *
- * The above comment directs App Script to limit the scope of file access for this script to the Spreadsheet
- * this script is container-bound to. It does not use any other Google Docs scopes.
  */
 
 // A cache to store person details we've already looked up in this run, to avoid redundant API calls.
@@ -73,7 +70,7 @@ function apolloFindAndVerifyContactsForAccounts() {
         per_page: 20 // Over-sample by fetching more results
       };
 
-      const searchResult = apolloSearcher_(searchPayload);
+      const searchResult = apolloSearcher_(searchPayload); // This line will now work
       if (!searchResult || searchResult.people.length === 0) {
         console.log(`[${companyName}] No more results found on page ${page}.`);
         break; // Exit if no more people are found
@@ -87,7 +84,6 @@ function apolloFindAndVerifyContactsForAccounts() {
           break;
         }
 
-        // --- VERIFICATION STEP ---
         let personDetails = JSON.parse(personCache.get(person.id));
         if (personDetails) {
           console.log(`[${companyName}]   - Verifying ${person.name} (ID: ${person.id}) from cache.`);
@@ -95,7 +91,7 @@ function apolloFindAndVerifyContactsForAccounts() {
           console.log(`[${companyName}]   - Verifying ${person.name} (ID: ${person.id}) via API call.`);
           personDetails = apolloPersonById_(person.id);
           if (personDetails) {
-             personCache.put(person.id, JSON.stringify(personDetails), 3600); // Cache for 1 hour
+             personCache.put(person.id, JSON.stringify(personDetails), 3600);
           }
         }
        
@@ -104,8 +100,7 @@ function apolloFindAndVerifyContactsForAccounts() {
           if (normalizeString_(currentCompanyName) === normalizeString_(companyName)) {
             console.log(`[${companyName}]     -> SUCCESS: ${person.name} is verified at ${currentCompanyName}.`);
             const contactRow = [
-              false, // selected
-              companyDomain, personDetails.name || '', personDetails.title || '',
+              false, companyDomain, personDetails.name || '', personDetails.title || '',
               'Warm-Up', personDetails.email || '', personDetails.id,
               personDetails.id, '', '', '', 'Verified',
             ];
@@ -134,9 +129,41 @@ function apolloFindAndVerifyContactsForAccounts() {
   ui.alert('Process Complete', `Added a total of ${totalContactsAdded} verified contacts for the ${selectedAccounts.length} selected accounts.`, ui.ButtonSet.OK);
 }
 
+// =================================================================================================
+// HELPER FUNCTIONS
+// =================================================================================================
+
+/**
+ * [NEWLY ADDED]
+ * Helper function to perform a search in Apollo.
+ * @param {Object} payload The search payload for the Apollo API.
+ * @return {Object|null} The search results object or null on failure.
+ */
+function apolloSearcher_(payload) {
+  const apiKey = cfg_('APOLLO_API_KEY');
+  payload.api_key = apiKey;
+  const url = 'https://api.apollo.io/v1/mixed_people/search';
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  };
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    if (response.getResponseCode() === 200) {
+      return JSON.parse(response.getContentText());
+    }
+    console.error(`Apollo search failed. Status: ${response.getResponseCode()}, Response: ${response.getContentText()}`);
+    return null;
+  } catch (e) {
+    console.error(`Error in apolloSearcher_: ${e.message}`);
+    return null;
+  }
+}
+
 /**
  * Helper function to get full person details by Apollo ID.
- * This is crucial for verification. Leverages the /v1/people/{id} endpoint.
  * @param {string} personId The Apollo Person ID.
  * @return {Object|null} The person object from Apollo or null if not found.
  */
@@ -163,7 +190,6 @@ function apolloPersonById_(personId) {
 
 /**
  * Normalizes company names for more reliable comparison.
- * Converts to lowercase and removes common business suffixes.
  * @param {string} name The company name.
  * @return {string} The normalized name.
  */
