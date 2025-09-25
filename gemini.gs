@@ -1,3 +1,7 @@
+/**
+ * @OnlyCurrentDoc
+ */
+
 function generateAiMessages() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -31,7 +35,6 @@ function generateAiMessages() {
   const dreamdataUseCases = (() => { try { return cfg_('DREAMDATA_USE_CASES'); } catch(e) { return 'No use cases provided.'; } })();
   const contentLibraryJson = getContentLibrary_();
 
-  // This map is still needed for company-level data, but not for sender details.
   const companyData = new Map();
   if (accSh.getLastRow() > 1) {
     const accValues = accSh.getRange(2, 1, accSh.getLastRow() - 1, 8).getValues();
@@ -65,7 +68,7 @@ function generateAiMessages() {
         '{contact_summary}': row[10] || 'No contact summary available.',
         '{my_company_name}': myCompanyName,
         '{my_value_proposition}': myValueProp,
-        '{email_sender}': assignedSenderName, // This will no longer be overwritten
+        '{email_sender}': assignedSenderName,
         '{content_library}': contentLibraryJson,
         '{dreamdata_positioning}': dreamdataPositioning,
         '{dreamdata_use_cases}': dreamdataUseCases,
@@ -77,20 +80,15 @@ function generateAiMessages() {
       placeholders['{signals_last_30_days}'] = companyInfo.signals_last_30_days || 0;
       placeholders['{account_story_30_days}'] = companyInfo.account_story || 'No specific account journey data available.';
       
-      // The old, incorrect logic that overwrote the sender name has been REMOVED.
-      
       let finalPrompt = sequencePromptTemplate;
       for (const key in placeholders) {
         finalPrompt = finalPrompt.replace(new RegExp(key, 'g'), placeholders[key]);
       }
       
-      // --- LOGGING 4: See the exact prompt being sent to the AI ---
       console.log('--> Final prompt sent to AI:\n', finalPrompt);
-
 
       const jsonResponseString = geminiGenerate_(finalPrompt);
       
-      // --- LOGGING 5: See the raw response from the AI ---
       console.log('<-- Raw response from AI:\n', jsonResponseString);
 
       let outputs = ['Error', 'Error', 'Error', 'Error', 'Error', 'Error'];
@@ -118,7 +116,8 @@ function generateAiMessages() {
 
 function geminiGenerate_(prompt) {
   const apiKey = cfg_('GEMINI_API_KEY');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
   const payload = {
     contents: [{
@@ -129,8 +128,8 @@ function geminiGenerate_(prompt) {
       topK: 1,
       topP: 1,
       maxOutputTokens: 8192,
-      // **THE FIX**: Enforce JSON output from the API
-      response_mime_type: "application/json",
+      // --- THE FIX: Removed the unsupported parameter ---
+      // response_mime_type: "application/json", 
     },
   };
 
