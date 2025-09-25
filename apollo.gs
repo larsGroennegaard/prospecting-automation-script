@@ -228,6 +228,8 @@ function apolloAddContactsToSequence() {
 }
 
 
+
+
 function apolloFindContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
 
@@ -278,7 +280,6 @@ function apolloFindContactsForAccounts() {
       person_titles: fTitles.length ? fTitles : undefined,
     }, base);
     
-    // Using q_organization_domains_list as it was in the working version
     if (payload.q_organization_domains) {
       payload.q_organization_domains_list = payload.q_organization_domains;
       delete payload.q_organization_domains;
@@ -292,25 +293,24 @@ function apolloFindContactsForAccounts() {
     const rows = [];
     const placeholderEmail = 'email_not_unlocked@domain.com';
     for (const p of results) {
-      const apolloContactId = String(p.contact ? p.contact.id : (p.id || '')).trim(); // Use person id as fallback
-      const personId = String(p.id || '').trim(); // <-- TINY CHANGE 1: Capture the Person ID.
+      const apolloId = String(p.id || '').trim();
+      const personId = String(p.person_id || p.id || '').trim(); // <-- TINY CHANGE 1: Capture the Person ID.
       let email = String(p.email || '').toLowerCase();
       const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || 'N/A';
       const isContact = p.is_apollo_contact;
       const status = isContact ? 'from_apollo_contact' : 'from_apollo_person';
-      if (!email && !apolloContactId) continue;
+      if (!email && !apolloId) continue;
       if (email === placeholderEmail) email = '';
       const title = p.title || '';
       const stageId = p.contact_stage_id || '';
       const stage = stageId ? (stageMap.get(stageId) || stageId) : '';
       const hubspotId = p.hubspot_vid || '';
-      const key = `${domain}::${email || apolloContactId}`;
+      const key = `${domain}::${email || apolloId}`;
       if (existing.has(key)) continue;
       const originalEmail = String(p.email || '').toLowerCase();
       
-      // The apolloId here should be the CONTACT id, not the person id for update purposes.
-      // But we will add personId to its own column.
-      rows.push([true, domain, name, title, stage, originalEmail, apolloContactId, personId, hubspotId, '', '', status, '', '', '', '', '', '']); // <-- TINY CHANGE 2: Add personId to the row.
+      // We are adding the personId into its own column now.
+      rows.push([true, domain, name, title, stage, originalEmail, apolloId, personId, hubspotId, '', '', status, '', '', '', '', '', '']); // <-- TINY CHANGE 2: Add personId to the row.
       existing.add(key);
     }
     return rows;
