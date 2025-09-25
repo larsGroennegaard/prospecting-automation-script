@@ -1,4 +1,3 @@
-
 /**
  * Ensures the Content Library sheet has the correct header.
  */
@@ -26,7 +25,6 @@ function cl_buildLibrary() {
 
   const sheet = ensureContentLibraryHeader_();
 
-  // You can add more blog index pages here if needed
   const blogIndexPages = [
     "https://dreamdata.io/blog",
     "https://dreamdata.io/blog?offset=1744801352826"
@@ -52,7 +50,7 @@ function cl_buildLibrary() {
           sheet.appendRow([postUrl, contentData.title, description, persona]);
         }
       } else {
-         Logger.log(`Skipping ${postUrl} due to insufficient content.`);
+          Logger.log(`Skipping ${postUrl} due to insufficient content.`);
       }
       Utilities.sleep(1000); // Pause to be respectful to the server
     }
@@ -67,8 +65,6 @@ function cl_buildLibrary() {
 
 /**
  * Scrapes blog index pages to find all individual post URLs.
- * @param {string[]} urls - An array of blog index page URLs.
- * @returns {string[]} A unique array of blog post URLs.
  */
 function cl_getAllPostUrls_(urls) {
   const postUrls = new Set();
@@ -92,8 +88,6 @@ function cl_getAllPostUrls_(urls) {
 
 /**
  * Extracts the title and clean text content from a blog post's HTML.
- * @param {string} html - The HTML content of a blog post.
- * @returns {Object|null} An object with title and content, or null.
  */
 function cl_getPostContentAndTitle_(html) {
   try {
@@ -114,15 +108,15 @@ function cl_getPostContentAndTitle_(html) {
 }
 
 /**
- * Sends content to the Gemini API for analysis and returns a parsed CSV row.
- * @param {string} title - The title of the blog post.
- * @param {string} content - The text content of the blog post.
- * @returns {string[]|null} An array of [title, description, persona].
+ * Sends content to the Gemini API for analysis.
  */
 function cl_analyzeContentWithGemini_(title, content) {
-  const apiKey = cfg_('GEMINI_API_KEY'); // Using the cfg_ utility
+  const apiKey = cfg_('GEMINI_API_KEY');
+  
+  // --- THE FIX: Using the v1 endpoint with gemini-pro, matching the working function ---
   const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const truncatedContent = content.substring(0, 15000);
+  
+  const truncatedContent = content.substring(0, 30000); // Increased limit slightly for better analysis
 
   const prompt = `
     You are an expert B2B Content Analyst for Dreamdata, a B2B GTM Attribution Platform.
@@ -141,9 +135,15 @@ function cl_analyzeContentWithGemini_(title, content) {
     The title in your output MUST MATCH the input title exactly.
   `;
 
-  const payload = { 
+  // --- THE FIX: Aligning payload with the working function ---
+  const payload = {  
     "contents": [{ "parts": [{ "text": prompt }] }],
-    "generationConfig": { "maxOutputTokens": 512 }
+    "generationConfig": {
+      "temperature": 0.7,
+      "topK": 1,
+      "topP": 1,
+      "maxOutputTokens": 8192
+    }
   };
   const options = { 'method': 'post', 'contentType': 'application/json', 'payload': JSON.stringify(payload), 'muteHttpExceptions': true };
 
