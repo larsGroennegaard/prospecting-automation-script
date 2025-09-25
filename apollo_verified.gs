@@ -7,8 +7,8 @@ const personCache = CacheService.getScriptCache();
 const orgCache = CacheService.getScriptCache();
 
 /**
- * Finds contacts from Apollo, verifies they are employed, retrieves a valid email,
- * and adds only the successful contacts to the 'Contacts' sheet until the quota is met.
+ * Finds contacts from Apollo using a Persona, verifies they are employed,
+ * retrieves a valid email, and adds successful contacts to the sheet.
  */
 function apolloFindAndVerifyContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
@@ -21,18 +21,23 @@ function apolloFindAndVerifyContactsForAccounts() {
   const selectedAccounts = accSh.getRange(2, 1, accSh.getLastRow() - 1, accSh.getLastColumn()).getValues().filter(row => row[0] === true);
   if (selectedAccounts.length === 0) { ui.alert('No accounts are selected.'); return; }
 
-  const contactsPerCompanyInput = ui.prompt('Enter the number of verified contacts WITH EMAILS to find per company:', '5', ui.ButtonSet.OK_CANCEL);
+  const contactsPerCompanyInput = ui.prompt('Enter the number of contacts (from your Persona) to find per company:', '5', ui.ButtonSet.OK_CANCEL);
   if (contactsPerCompanyInput.getSelectedButton() !== ui.Button.OK) return;
   const contactsPerCompany = parseInt(contactsPerCompanyInput.getResponseText(), 10);
   if (isNaN(contactsPerCompany) || contactsPerCompany <= 0) { ui.alert('Invalid number.'); return; }
 
-  console.log(`--- Starting 'Find & Verify' Process ---`);
+  console.log(`--- Starting 'Find & Verify' Process using Persona ---`);
   console.log(`Accounts selected: ${selectedAccounts.length}. Contacts with email requested: ${contactsPerCompany}.`);
   
-  const response = ui.alert('Find & Verify Contacts?', `This will search for up to ${contactsPerCompany} contacts WITH VERIFIED EMAILS for the ${selectedAccounts.length} selected accounts. This may consume a significant number of API credits. Continue?`, ui.ButtonSet.YES_NO);
+  const response = ui.alert('Find & Verify Contacts?', `This will search for up to ${contactsPerCompany} contacts using your configured APOLLO_PERSONA_ID for the ${selectedAccounts.length} selected accounts. This will consume API and email credits. Continue?`, ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) { console.log('User cancelled the operation.'); return; }
 
-  const titles = cfg_('APOLLO_TITLES').split(',').map(t => t.trim());
+  const personaId = cfg_('APOLLO_PERSONA_ID');
+  if (!personaId) {
+    ui.alert('Error: APOLLO_PERSONA_ID is not defined in your Config sheet. Please add it and try again.');
+    return;
+  }
+  console.log(`Using Persona ID: ${personaId}`);
   let totalContactsAdded = 0;
 
   for (const account of selectedAccounts) {
@@ -50,35 +55,45 @@ function apolloFindAndVerifyContactsForAccounts() {
     
     let verifiedContactsForThisAccount = [];
     let page = 1;
-    const maxPagesToSearch = 10; // Increased page search limit to find enough contacts with emails
+    const maxPagesToSearch = 10;
 
     while (verifiedContactsForThisAccount.length < contactsPerCompany && page <= maxPagesToSearch) {
       console.log(`[${companyName}] Fetching page ${page} of potential contacts.`);
+      
+      // --- THE FIX: Using the correct parameter name ---
       const searchPayload = {
         organization_ids: [orgId],
-        person_titles: titles,
+        q_person_persona_ids: [personaId], // Correct parameter
         page: page,
-        per_page: 25 // Fetching max results per page
+        per_page: 25
       };
 
       const searchResult = apolloSearcher_(searchPayload);
       if (!searchResult || !searchResult.people || searchResult.people.length === 0) {
-        console.log(`[${companyName}] No more results found on page ${page}.`);
-        break;
+        // Also check contacts list as a fallback, per the new JSON response structure
+        if (!searchResult || !searchResult.contacts || searchResult.contacts.length === 0) {
+          console.log(`[${companyName}] No more results found on page ${page}.`);
+          break;
+        }
       }
       
-      console.log(`[${companyName}] Found ${searchResult.people.length} potential contacts. Starting verification and email lookup...`);
+      const peopleFound = (searchResult.people || []).concat(searchResult.contacts || []);
+      console.log(`[${companyName}] Found ${peopleFound.length} potential contacts. Starting verification and email lookup...`);
 
-      for (const person of searchResult.people) {
+      for (const person of peopleFound) {
+        // Apollo search results can have person_id or just id
+        const personId = person.person_id || person.id; 
+        if (!personId) continue;
+
         if (verifiedContactsForThisAccount.length >= contactsPerCompany) {
           console.log(`[${companyName}] Quota of ${contactsPerCompany} met.`);
           break;
         }
 
-        let personDetails = JSON.parse(personCache.get(person.id));
+        let personDetails = JSON.parse(personCache.get(personId));
         if (!personDetails) {
-          personDetails = apolloPersonById_(person.id);
-          if (personDetails) personCache.put(person.id, JSON.stringify(personDetails), 3600);
+          personDetails = apolloPersonById_(personId);
+          if (personDetails) personCache.put(personId, JSON.stringify(personDetails), 3600);
         }
        
         if (personDetails && personDetails.person && personDetails.person.organization && personDetails.person.organization.name) {
@@ -87,8 +102,6 @@ function apolloFindAndVerifyContactsForAccounts() {
 
           if (normalizeString_(currentCompanyName) === normalizeString_(companyName)) {
             console.log(`[${companyName}]   - SUCCESS: ${currentPerson.name} is verified.`);
-
-            // --- FINAL LOGIC: Enrich and check for a valid email ---
             const email = apolloEnrichAndGetEmail_(currentPerson.id);
             
             if (email) {
@@ -106,7 +119,7 @@ function apolloFindAndVerifyContactsForAccounts() {
             console.warn(`[${companyName}]   - FAILED: Company mismatch for ${currentPerson.name}. Expected: "${companyName}", Found: "${currentCompanyName}".`);
           }
         } else {
-          console.error(`[${companyName}]   - ERROR: Could not retrieve valid details for ID ${person.id}.`);
+          console.error(`[${companyName}]   - ERROR: Could not retrieve valid details for ID ${personId}.`);
         }
       }
       page++;
@@ -124,6 +137,7 @@ function apolloFindAndVerifyContactsForAccounts() {
   console.log(`\n--- 'Find & Verify' Process Complete ---`);
   ui.alert('Process Complete', `Added a total of ${totalContactsAdded} verified contacts with emails.`, ui.ButtonSet.OK);
 }
+
 
 // =================================================================================================
 // HELPER FUNCTIONS (No changes needed below this line)
