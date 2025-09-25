@@ -7,8 +7,8 @@ const personCache = CacheService.getScriptCache();
 const orgCache = CacheService.getScriptCache();
 
 /**
- * Finds contacts from Apollo, verifies employment, retrieves email, SAVES them as contacts,
- * and adds the final, actionable contacts to the 'Contacts' sheet.
+ * Finds contacts from Apollo using a Persona, verifies they are employed,
+ * retrieves a valid email, and adds successful contacts to the sheet.
  */
 function apolloFindAndVerifyContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
@@ -28,13 +28,13 @@ function apolloFindAndVerifyContactsForAccounts() {
 
   console.log(`--- Starting 'Find & Verify' Process using Persona ---`);
   console.log(`Accounts selected: ${selectedAccounts.length}. Contacts with email requested: ${contactsPerCompany}.`);
-
-  const response = ui.alert('Find, Verify & Save Contacts?', `This will find, verify, get emails, and SAVE contacts to your Apollo instance. Continue?`, ui.ButtonSet.YES_NO);
+  
+  const response = ui.alert('Find & Verify Contacts?', `This will search for up to ${contactsPerCompany} contacts using your configured APOLLO_PERSONA_ID for the ${selectedAccounts.length} selected accounts. This will consume API and email credits. Continue?`, ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) { console.log('User cancelled the operation.'); return; }
 
   const personaId = cfg_('APOLLO_PERSONA_ID');
   if (!personaId) {
-    ui.alert('Error: APOLLO_PERSONA_ID is not defined in your Config sheet.');
+    ui.alert('Error: APOLLO_PERSONA_ID is not defined in your Config sheet. Please add it and try again.');
     return;
   }
   console.log(`Using Persona ID: ${personaId}`);
@@ -52,33 +52,39 @@ function apolloFindAndVerifyContactsForAccounts() {
       continue;
     }
     console.log(`[${companyName}] Found Organization ID: ${orgId}`);
-
+    
     let verifiedContactsForThisAccount = [];
     let page = 1;
     const maxPagesToSearch = 10;
 
     while (verifiedContactsForThisAccount.length < contactsPerCompany && page <= maxPagesToSearch) {
       console.log(`[${companyName}] Fetching page ${page} of potential contacts.`);
-
+      
+      // --- THE FIX: Using the correct parameter name ---
       const searchPayload = {
         organization_ids: [orgId],
-        q_person_persona_ids: [personaId],
+        q_person_persona_ids: [personaId], // Correct parameter
         page: page,
         per_page: 25
       };
 
       const searchResult = apolloSearcher_(searchPayload);
-      if ((!searchResult.people || searchResult.people.length === 0) && (!searchResult.contacts || searchResult.contacts.length === 0)) {
-        console.log(`[${companyName}] No more results found on page ${page}.`);
-        break;
+      if (!searchResult || !searchResult.people || searchResult.people.length === 0) {
+        // Also check contacts list as a fallback, per the new JSON response structure
+        if (!searchResult || !searchResult.contacts || searchResult.contacts.length === 0) {
+          console.log(`[${companyName}] No more results found on page ${page}.`);
+          break;
+        }
       }
-
+      
       const peopleFound = (searchResult.people || []).concat(searchResult.contacts || []);
-      console.log(`[${companyName}] Found ${peopleFound.length} potential contacts. Starting verification...`);
+      console.log(`[${companyName}] Found ${peopleFound.length} potential contacts. Starting verification and email lookup...`);
 
       for (const person of peopleFound) {
-        const personId = person.person_id || person.id;
+        // Apollo search results can have person_id or just id
+        const personId = person.person_id || person.id; 
         if (!personId) continue;
+
         if (verifiedContactsForThisAccount.length >= contactsPerCompany) {
           console.log(`[${companyName}] Quota of ${contactsPerCompany} met.`);
           break;
@@ -89,7 +95,7 @@ function apolloFindAndVerifyContactsForAccounts() {
           personDetails = apolloPersonById_(personId);
           if (personDetails) personCache.put(personId, JSON.stringify(personDetails), 3600);
         }
-
+       
         if (personDetails && personDetails.person && personDetails.person.organization && personDetails.person.organization.name) {
           const currentPerson = personDetails.person;
           const currentCompanyName = currentPerson.organization.name;
@@ -97,25 +103,17 @@ function apolloFindAndVerifyContactsForAccounts() {
           if (normalizeString_(currentCompanyName) === normalizeString_(companyName)) {
             console.log(`[${companyName}]   - SUCCESS: ${currentPerson.name} is verified.`);
             const email = apolloEnrichAndGetEmail_(currentPerson.id);
-
+            
             if (email) {
-              console.log(`[${companyName}]     - SUCCESS: Found email for ${currentPerson.name}: ${email}`);
-
-              // --- FINAL STEP: Save the Person as a Contact ---
-              const contact = apolloSavePersonAsContact_(currentPerson.id);
-              if (contact && contact.id) {
-                console.log(`[${companyName}]       -> SUCCESS: Saved as Contact with ID: ${contact.id}`);
-                const contactRow = [
-                  false, companyDomain, currentPerson.name || '', currentPerson.title || '',
-                  'Warm-Up', email, contact.id, currentPerson.id, // Use new contact.id
-                  '', '', '', 'Contact Saved'
-                ];
-                verifiedContactsForThisAccount.push(contactRow);
-              } else {
-                console.error(`[${companyName}]       -> FAILED: Could not save ${currentPerson.name} as a contact.`);
-              }
+              console.log(`[${companyName}]     -> SUCCESS: Found email for ${currentPerson.name}: ${email}`);
+              const contactRow = [ 
+                false, companyDomain, currentPerson.name || '', currentPerson.title || '', 
+                'Warm-Up', email, currentPerson.id, currentPerson.id, 
+                '', '', '', 'Verified & Email Found' 
+              ];
+              verifiedContactsForThisAccount.push(contactRow);
             } else {
-              console.log(`[${companyName}]     - FAILED: No email found for ${currentPerson.name}. Discarding.`);
+              console.log(`[${companyName}]     -> FAILED: No email found for ${currentPerson.name}. Discarding.`);
             }
           } else {
             console.warn(`[${companyName}]   - FAILED: Company mismatch for ${currentPerson.name}. Expected: "${companyName}", Found: "${currentCompanyName}".`);
@@ -130,63 +128,21 @@ function apolloFindAndVerifyContactsForAccounts() {
     if (verifiedContactsForThisAccount.length > 0) {
       conSh.getRange(conSh.getLastRow() + 1, 1, verifiedContactsForThisAccount.length, 12).setValues(verifiedContactsForThisAccount);
       totalContactsAdded += verifiedContactsForThisAccount.length;
-      console.log(`[${companyName}] <== Wrote ${verifiedContactsForThisAccount.length} verified contacts.`);
+      console.log(`[${companyName}] <== Wrote ${verifiedContactsForThisAccount.length} verified contacts with emails.`);
     } else {
-      console.log(`[${companyName}] <== No verified contacts were found to write.`);
+      console.log(`[${companyName}] <== No verified contacts with emails were found to write.`);
     }
   }
 
   console.log(`\n--- 'Find & Verify' Process Complete ---`);
-  ui.alert('Process Complete', `Added a total of ${totalContactsAdded} new contacts.`, ui.ButtonSet.OK);
+  ui.alert('Process Complete', `Added a total of ${totalContactsAdded} verified contacts with emails.`, ui.ButtonSet.OK);
 }
 
+
 // =================================================================================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS (No changes needed below this line)
 // =================================================================================================
 
-/**
- * Saves a Person as a Contact in Apollo.
- * @param {string} personId The Apollo Person ID.
- * @return {Object|null} The newly created contact object or null.
- */
-function apolloSavePersonAsContact_(personId) {
-  const apiKey = cfg_('APOLLO_API_KEY');
-  const url = 'https://api.apollo.io/v1/contacts';
-  const payload = {
-    api_key: apiKey,
-    person_ids: [personId]
-  };
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'Cache-Control': 'no-cache' },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-
-  console.log(`--> Apollo Save Contact Call for Person ID: ${personId}`);
-
-  try {
-    const response = UrlFetchApp.fetch(url, options);
-    const responseBody = response.getContentText();
-    console.log(`<-- Apollo Save Contact Response (Status: ${response.getResponseCode()})`);
-
-    if (response.getResponseCode() === 200 || response.getResponseCode() === 201) {
-      const data = JSON.parse(responseBody);
-      return data.contacts && data.contacts.length > 0 ? data.contacts[0] : null;
-    }
-    return null;
-  } catch (e) {
-    console.error(`Error in apolloSavePersonAsContact_: ${e.message}`);
-    return null;
-  }
-}
-
-/**
- * Enriches a person and returns their email.
- * @param {string} personId The Apollo Person ID.
- * @return {string|null} The email address or null.
- */
 function apolloEnrichAndGetEmail_(personId) {
   const apiKey = cfg_('APOLLO_API_KEY');
   const url = 'https://api.apollo.io/v1/people/enrich';
@@ -221,11 +177,6 @@ function apolloEnrichAndGetEmail_(personId) {
   }
 }
 
-/**
- * Gets an organization's Apollo ID based on its domain.
- * @param {string} domain The company domain.
- * @return {string|null} The Apollo organization ID or null.
- */
 function getApolloOrgId_(domain) {
   let cachedId = orgCache.get(domain);
   if (cachedId) {
@@ -265,11 +216,6 @@ function getApolloOrgId_(domain) {
   }
 }
 
-/**
- * Helper to perform a person search in Apollo.
- * @param {Object} payload The search payload.
- * @return {Object|null} The search results or null.
- */
 function apolloSearcher_(payload) {
   const apiKey = cfg_('APOLLO_API_KEY');
   payload.api_key = apiKey;
@@ -301,11 +247,6 @@ function apolloSearcher_(payload) {
   }
 }
 
-/**
- * Helper to get full person details by Apollo ID.
- * @param {string} personId The Apollo Person ID.
- * @return {Object|null} The person object or null.
- */
 function apolloPersonById_(personId) {
   const apiKey = cfg_('APOLLO_API_KEY');
   const url = `https://api.apollo.io/v1/people/${personId}?api_key=${apiKey}`;
@@ -334,11 +275,6 @@ function apolloPersonById_(personId) {
   }
 }
 
-/**
- * Normalizes company names for reliable comparison.
- * @param {string} name The company name.
- * @return {string} The normalized name.
- */
 function normalizeString_(name) {
   if (!name) return '';
   return name.toLowerCase().replace(/,|\.|inc|ltd|llc|co|corp|corporation/g, '').trim();
