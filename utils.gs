@@ -85,10 +85,12 @@ function ensureContactsHeader_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(CON_SHEET);
   if (!sh) throw new Error(`Missing sheet: ${CON_SHEET}`);
   
-  // Final header with 20 columns, including assignment columns
+  // Header with the new contact_summary column
   const expected = [
     'selected', 'company_domain', 'contact_name', 'title', 'stage', 'email', 
-    'apollo_contact_id', 'hubspot_contact_id', 'contact_story_30_days', 'gem_subject', 'gem_body', 'status', 
+    'apollo_contact_id', 'hubspot_contact_id', 'contact_story_30_days', 
+    'contact_summary', // <-- NEW COLUMN
+    'status', 
     'email_1_subject', 'email_1_body', 'email_2_subject', 'email_2_body', 
     'email_3_subject', 'email_3_body', 'assigned_sending_email', 'assigned_sender_name'
   ];
