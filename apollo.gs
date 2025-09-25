@@ -1,3 +1,6 @@
+/**
+ * @OnlyCurrentDoc
+ */
 
 function apolloGet_(url) {
   const apiKey = cfg_('APOLLO_API_KEY');
@@ -77,12 +80,13 @@ function apolloPushMessages() {
 
   let processedCount = 0, errorCount = 0, skippedCount = 0;
   allContacts.forEach((row, index) => {
-    const isSelected = row[0];       // col A
-    const apolloContactId = row[6];  // col G
-    const status = row[11];          // col L
-    const email1Subject = row[12];   // col M
+    const isSelected = row[0];        // col A
+    const apolloContactId = row[6];   // col G
+    const status = row[11] || '';     // col L
+    const email1Subject = row[12];    // col M
 
-    if (isSelected && apolloContactId && email1Subject && !status.includes('apollo_pushed') && status.includes('from_apollo_contact')) {
+    // --- THE FIX: Updated the condition to work with the new status ---
+    if (isSelected && apolloContactId && email1Subject && !status.includes('apollo_pushed')) {
       const payload = { typed_custom_fields: {} };
       payload.typed_custom_fields[fieldIds.subject1] = row[12];
       payload.typed_custom_fields[fieldIds.body1] = row[13];
@@ -102,14 +106,13 @@ function apolloPushMessages() {
         errorCount++;
       }
       SpreadsheetApp.flush();
-    } else if (isSelected && apolloContactId && email1Subject && !status.includes('apollo_pushed')) {
+    } else if (isSelected && status.includes('apollo_pushed')) {
       skippedCount++;
-      const newStatus = status ? `${status};apollo_push_skipped(person)` : 'apollo_push_skipped(person)';
-      conSh.getRange(index + 2, 12).setValue(newStatus);
     }
   });
-  ui.alert(`Push to Apollo complete.\n\nUpdated: ${processedCount}\nFailed: ${errorCount}\nSkipped: ${skippedCount}`);
+  ui.alert(`Push to Apollo complete.\n\nUpdated: ${processedCount}\nFailed: ${errorCount}\nSkipped (already pushed): ${skippedCount}`);
 }
+
 
 function apolloAddContactsToSequence() {
   const ui = SpreadsheetApp.getUi();
@@ -118,7 +121,6 @@ function apolloAddContactsToSequence() {
 
   if (conSh.getLastRow() < 2) { ui.alert('No contacts to process.'); return; }
   
-  // --- NEW: Get column index for assigned email ---
   const headers = conSh.getRange(1, 1, 1, conSh.getLastColumn()).getValues()[0];
   const assignedEmailColIdx = headers.indexOf('assigned_sending_email');
   if (assignedEmailColIdx === -1) {
@@ -138,15 +140,15 @@ function apolloAddContactsToSequence() {
   const sequenceId = cfg_('APOLLO_SEQUENCE_ID');
   if (apolloMailboxMap.size === 0) { ui.alert('Could not fetch Apollo mailboxes. Check API key and permissions.'); return; }
 
-  // --- NEW: Simplified grouping logic ---
   const contactsBySender = new Map();
   allContacts.forEach((row, index) => {
     const isSelected = row[0];
-    const status = row[11];
+    const status = row[11] || '';
     const apolloContactId = row[6];
-    const assignedEmail = row[assignedEmailColIdx]; // Read from the new column
+    const assignedEmail = row[assignedEmailColIdx]; 
 
-    if (isSelected && apolloContactId && assignedEmail && status.includes('from_apollo_contact') && !status.includes('apollo_sequenced')) {
+    // --- THE FIX: Updated the condition to work with the new workflow ---
+    if (isSelected && apolloContactId && assignedEmail && !status.includes('apollo_sequenced')) {
       if (!contactsBySender.has(assignedEmail)) {
         contactsBySender.set(assignedEmail, []);
       }
