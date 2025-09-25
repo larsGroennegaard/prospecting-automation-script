@@ -8,9 +8,7 @@ const personCache = CacheService.getScriptCache();
 /**
  * Finds contacts from Apollo for the selected accounts in the 'Accounts' sheet,
  * verifies they are still employed at the company, and adds the verified contacts to the 'Contacts' sheet.
- * This function loops through pages of search results and performs verification until the desired
- * number of contacts is found for each company.
- * INCLUDES DETAILED LOGGING.
+ * This version includes detailed logging of API requests.
  */
 function apolloFindAndVerifyContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
@@ -67,13 +65,13 @@ function apolloFindAndVerifyContactsForAccounts() {
         q_organization_domains: [companyDomain],
         person_titles: titles,
         page: page,
-        per_page: 20 // Over-sample by fetching more results
+        per_page: 20
       };
 
-      const searchResult = apolloSearcher_(searchPayload); // This line will now work
+      const searchResult = apolloSearcher_(searchPayload);
       if (!searchResult || searchResult.people.length === 0) {
         console.log(`[${companyName}] No more results found on page ${page}.`);
-        break; // Exit if no more people are found
+        break;
       }
       
       console.log(`[${companyName}] Found ${searchResult.people.length} potential contacts on page ${page}. Starting verification...`);
@@ -129,12 +127,12 @@ function apolloFindAndVerifyContactsForAccounts() {
   ui.alert('Process Complete', `Added a total of ${totalContactsAdded} verified contacts for the ${selectedAccounts.length} selected accounts.`, ui.ButtonSet.OK);
 }
 
+
 // =================================================================================================
 // HELPER FUNCTIONS
 // =================================================================================================
 
 /**
- * [NEWLY ADDED]
  * Helper function to perform a search in Apollo.
  * @param {Object} payload The search payload for the Apollo API.
  * @return {Object|null} The search results object or null on failure.
@@ -146,15 +144,25 @@ function apolloSearcher_(payload) {
   const options = {
     method: 'post',
     contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-cache' },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,
   };
+
+  // --- LOGGING THE API CALL ---
+  const logPayload = JSON.parse(JSON.stringify(payload)); // Deep copy for logging
+  logPayload.api_key = 'REDACTED'; // Redact API key
+  console.log(`--> Apollo Search Call:\nURL: ${url}\nPayload: ${JSON.stringify(logPayload, null, 2)}`);
+  // --- END LOGGING ---
+
   try {
     const response = UrlFetchApp.fetch(url, options);
+    const responseBody = response.getContentText();
     if (response.getResponseCode() === 200) {
-      return JSON.parse(response.getContentText());
+      console.log(`<-- Apollo Search Response: Success (200)`);
+      return JSON.parse(responseBody);
     }
-    console.error(`Apollo search failed. Status: ${response.getResponseCode()}, Response: ${response.getContentText()}`);
+    console.error(`Apollo search failed. Status: ${response.getResponseCode()}, Response: ${responseBody}`);
     return null;
   } catch (e) {
     console.error(`Error in apolloSearcher_: ${e.message}`);
@@ -173,14 +181,23 @@ function apolloPersonById_(personId) {
   const options = {
     method: 'get',
     contentType: 'application/json',
+    headers: { 'Cache-Control': 'no-cache' },
     muteHttpExceptions: true,
   };
+
+  // --- LOGGING THE API CALL ---
+  const logUrl = url.replace(apiKey, 'REDACTED'); // Redact API key from URL for logging
+  console.log(`--> Apollo Person Call:\nURL: ${logUrl}`);
+  // --- END LOGGING ---
+
   try {
     const response = UrlFetchApp.fetch(url, options);
+    const responseBody = response.getContentText();
     if (response.getResponseCode() === 200) {
-      return JSON.parse(response.getContentText());
+      console.log(`<-- Apollo Person Response: Success (200) for ID ${personId}`);
+      return JSON.parse(responseBody);
     }
-    console.error(`Failed to fetch person ${personId}. Status: ${response.getResponseCode()}, Response: ${response.getContentText()}`);
+    console.error(`Failed to fetch person ${personId}. Status: ${response.getResponseCode()}, Response: ${responseBody}`);
     return null;
   } catch (e) {
     console.error(`Error in apolloPersonById_ for ID ${personId}: ${e.message}`);
