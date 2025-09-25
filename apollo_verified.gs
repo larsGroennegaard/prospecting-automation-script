@@ -13,6 +13,7 @@ const personCache = CacheService.getScriptCache();
  * verifies they are still employed at the company, and adds the verified contacts to the 'Contacts' sheet.
  * This function loops through pages of search results and performs verification until the desired
  * number of contacts is found for each company.
+ * INCLUDES DETAILED LOGGING.
  */
 function apolloFindAndVerifyContactsForAccounts() {
   const ui = SpreadsheetApp.getUi();
@@ -39,19 +40,24 @@ function apolloFindAndVerifyContactsForAccounts() {
     ui.alert('Invalid number. Please enter a positive integer.');
     return;
   }
+  
+  console.log(`--- Starting 'Find & Verify' Process ---`);
+  console.log(`Accounts selected: ${selectedAccounts.length}. Contacts requested per account: ${contactsPerCompany}.`);
 
   const response = ui.alert('Find & Verify Contacts?', `This will search for up to ${contactsPerCompany} VERIFIED contacts for the ${selectedAccounts.length} selected accounts. This may take a while and consume more API credits. Continue?`, ui.ButtonSet.YES_NO);
-  if (response !== ui.Button.YES) return;
+  if (response !== ui.Button.YES) {
+    console.log('User cancelled the operation.');
+    return;
+  }
 
   const titles = cfg_('APOLLO_TITLES').split(',').map(t => t.trim());
   let totalContactsAdded = 0;
 
   for (const account of selectedAccounts) {
-    const hubspotCompanyId = account[1];
     const companyName = account[2];
     const companyDomain = account[3];
-    const hubspotOwnerEmail = account[6];
     
+    console.log(`\n[${companyName}] ==> Starting search.`);
     let verifiedContactsForThisAccount = [];
     let page = 1;
     const maxPagesToSearch = 5; // To prevent infinite loops
@@ -59,6 +65,7 @@ function apolloFindAndVerifyContactsForAccounts() {
     SpreadsheetApp.getActiveSpreadsheet().toast(`Searching for contacts at ${companyName}...`);
 
     while (verifiedContactsForThisAccount.length < contactsPerCompany && page <= maxPagesToSearch) {
+      console.log(`[${companyName}] Fetching page ${page} of potential contacts.`);
       const searchPayload = {
         q_organization_domains: [companyDomain],
         person_titles: titles,
@@ -68,20 +75,24 @@ function apolloFindAndVerifyContactsForAccounts() {
 
       const searchResult = apolloSearcher_(searchPayload);
       if (!searchResult || searchResult.people.length === 0) {
-        console.log(`No more results found for ${companyName} on page ${page}.`);
+        console.log(`[${companyName}] No more results found on page ${page}.`);
         break; // Exit if no more people are found
       }
+      
+      console.log(`[${companyName}] Found ${searchResult.people.length} potential contacts on page ${page}. Starting verification...`);
 
       for (const person of searchResult.people) {
-        // Check if we already found enough contacts for this account
         if (verifiedContactsForThisAccount.length >= contactsPerCompany) {
+          console.log(`[${companyName}] Quota of ${contactsPerCompany} met. Halting search for this company.`);
           break;
         }
 
         // --- VERIFICATION STEP ---
-        // Use a cache to avoid re-fetching the same person's details
         let personDetails = JSON.parse(personCache.get(person.id));
-        if (!personDetails) {
+        if (personDetails) {
+          console.log(`[${companyName}]   - Verifying ${person.name} (ID: ${person.id}) from cache.`);
+        } else {
+          console.log(`[${companyName}]   - Verifying ${person.name} (ID: ${person.id}) via API call.`);
           personDetails = apolloPersonById_(person.id);
           if (personDetails) {
              personCache.put(person.id, JSON.stringify(personDetails), 3600); // Cache for 1 hour
@@ -90,41 +101,36 @@ function apolloFindAndVerifyContactsForAccounts() {
        
         if (personDetails && personDetails.organization && personDetails.organization.name) {
           const currentCompanyName = personDetails.organization.name;
-          // Simple normalization for comparison
           if (normalizeString_(currentCompanyName) === normalizeString_(companyName)) {
+            console.log(`[${companyName}]     -> SUCCESS: ${person.name} is verified at ${currentCompanyName}.`);
             const contactRow = [
               false, // selected
-              companyDomain,
-              personDetails.name || '',
-              personDetails.title || '',
-              'Warm-Up', // Default stage
-              personDetails.email || '',
-              personDetails.id, // apollo_contact_id is the person id
-              personDetails.id, // apollo_person_id
-              '', // hubspot_contact_id
-              '', // contact_story_30_days
-              '', // contact_summary
-              'Verified', // status
+              companyDomain, personDetails.name || '', personDetails.title || '',
+              'Warm-Up', personDetails.email || '', personDetails.id,
+              personDetails.id, '', '', '', 'Verified',
             ];
             verifiedContactsForThisAccount.push(contactRow);
           } else {
-            console.log(`Verification failed for ${person.name}. Expected: ${companyName}, Found: ${currentCompanyName}`);
+            console.warn(`[${companyName}]     -> FAILED: Company mismatch for ${person.name}. Expected: "${companyName}", Found: "${currentCompanyName}".`);
           }
+        } else {
+          console.error(`[${companyName}]     -> ERROR: Could not retrieve valid person details for ID ${person.id}.`);
         }
       }
       page++;
     }
 
     if (verifiedContactsForThisAccount.length > 0) {
-      conSh.getRange(conSh.getLastRow() + 1, 1, verifiedContactsForThisAccount.length, 12)
-           .setValues(verifiedContactsForThisAccount);
+      conSh.getRange(conSh.getLastRow() + 1, 1, verifiedContactsForThisAccount.length, 12).setValues(verifiedContactsForThisAccount);
       totalContactsAdded += verifiedContactsForThisAccount.length;
-      console.log(`Added ${verifiedContactsForThisAccount.length} verified contacts for ${companyName}.`);
+      console.log(`[${companyName}] <== Process finished. Wrote ${verifiedContactsForThisAccount.length} verified contacts to the sheet.`);
     } else {
-      console.log(`Could not find any verified contacts for ${companyName}.`);
+      console.log(`[${companyName}] <== Process finished. No verified contacts found to write.`);
     }
   }
 
+  console.log(`\n--- 'Find & Verify' Process Complete ---`);
+  console.log(`Added a total of ${totalContactsAdded} verified contacts for the ${selectedAccounts.length} selected accounts.`);
   ui.alert('Process Complete', `Added a total of ${totalContactsAdded} verified contacts for the ${selectedAccounts.length} selected accounts.`, ui.ButtonSet.OK);
 }
 
@@ -147,7 +153,7 @@ function apolloPersonById_(personId) {
     if (response.getResponseCode() === 200) {
       return JSON.parse(response.getContentText());
     }
-    console.error(`Failed to fetch person ${personId}. Status: ${response.getResponseCode()}`);
+    console.error(`Failed to fetch person ${personId}. Status: ${response.getResponseCode()}, Response: ${response.getContentText()}`);
     return null;
   } catch (e) {
     console.error(`Error in apolloPersonById_ for ID ${personId}: ${e.message}`);
