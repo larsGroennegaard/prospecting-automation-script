@@ -84,27 +84,31 @@ function ensureAccountsHeader_() {
 function ensureContactsHeader_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(CON_SHEET);
   if (!sh) throw new Error(`Missing sheet: ${CON_SHEET}`);
-  
-  // Header with the new contact_summary column
+
   const expected = [
-    'selected', 'company_domain', 'contact_name', 'title', 'stage', 'email', 
-    'apollo_contact_id', 'hubspot_contact_id', 'contact_story_30_days', 
-    'contact_summary', // <-- NEW COLUMN
-    'status', 
-    'email_1_subject', 'email_1_body', 'email_2_subject', 'email_2_body', 
+    'selected', 'company_domain', 'contact_name', 'title', 'stage', 'email',
+    'apollo_contact_id', 'apollo_person_id',
+    'hubspot_contact_id', 'contact_story_30_days', 'contact_summary',
+    'status', 'email_1_subject', 'email_1_body', 'email_2_subject', 'email_2_body',
     'email_3_subject', 'email_3_body', 'assigned_sending_email', 'assigned_sender_name'
   ];
 
   if (sh.getLastRow() === 0) {
+    // If the sheet is empty, create the header row.
     sh.appendRow(expected);
-    sh.getRange("A2:A").insertCheckboxes(); 
+    sh.getRange("A2:A").insertCheckboxes();
   } else {
-    const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String);
-    if (headers.length < expected.length) {
-       sh.getRange(1, 1, 1, expected.length).setValues([expected]);
-    }
+    // Read the current header row from the sheet.
+    const headers = sh.getRange(1, 1, 1, expected.length).getValues()[0];
+
+    // Compare the current headers to the expected headers.
     const ok = expected.every((h, i) => (headers[i] || '').toLowerCase() === h.toLowerCase());
-    if (!ok) throw new Error(`First row of ${CON_SHEET} must be: ${expected.join(' | ')}`);
+
+    // If they don't match, overwrite the header row to fix it.
+    if (!ok) {
+      ui.alert('Header Mismatch', 'The header row in the "Contacts" sheet was incorrect and has been automatically repaired.', ui.ButtonSet.OK);
+      sh.getRange(1, 1, 1, expected.length).setValues([expected]);
+    }
   }
   return sh;
 }
