@@ -121,7 +121,7 @@ function cl_getPostContentAndTitle_(html) {
  */
 function cl_analyzeContentWithGemini_(title, content) {
   const apiKey = cfg_('GEMINI_API_KEY'); // Using the cfg_ utility
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const truncatedContent = content.substring(0, 15000);
 
   const prompt = `
