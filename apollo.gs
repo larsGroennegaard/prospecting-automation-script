@@ -272,10 +272,13 @@ function apolloFindContactsForAccounts() {
       person_titles: fTitles.length ? fTitles : undefined,
     }, base);
     
+    // =================================================================
+    // THIS IS THE FIX: Ensure the correct parameter name is used.
     if (payload.organization_domains) {
       payload.q_organization_domains = payload.organization_domains;
       delete payload.organization_domains;
     }
+    // =================================================================
     
     if (payload.person_titles && includeSimilarTitles) payload.include_similar_titles = true;
     return payload;
@@ -288,7 +291,7 @@ function apolloFindContactsForAccounts() {
       if (!email || existing.has(email)) continue;
       
       const contactId = p.contact ? p.contact.id : null;
-      const personId = p.id; // <-- TINY CHANGE 1: We get the person_id here.
+      const personId = p.id;
 
       rows.push([
         true, // selected
@@ -298,7 +301,7 @@ function apolloFindContactsForAccounts() {
         p.contact && p.contact.contact_stage_id ? (stageMap.get(p.contact.contact_stage_id) || '') : '', // stage
         email, // email
         contactId, // apollo_contact_id
-        personId, // <-- TINY CHANGE 2: We add the person_id to the row.
+        personId, // apollo_person_id
         p.contact ? p.contact.hubspot_vid : '', // hubspot_contact_id
       ]);
       existing.add(email);
