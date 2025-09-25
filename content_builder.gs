@@ -127,7 +127,7 @@ function cl_analyzeContentWithGemini_(title, content) {
     Content: "${truncatedContent}"
 
     YOUR TASK:
-    1.  Description / Key Takeaway: Write a single, crisp sentence describing the key problem the article solves.
+    1.  Description / Key Takeaway: Write three to five sentences describing the key problem the article solves.
     2.  Target Persona: Identify the primary target persona from the list above.
 
     OUTPUT FORMAT:
