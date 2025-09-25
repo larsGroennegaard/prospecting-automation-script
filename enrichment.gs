@@ -1,12 +1,4 @@
-/**
- * @file enrichment.gs
- * @description Contains functions for enriching contacts and accounts with external data.
- */
 
-/**
- * For selected contacts, calls the Apollo /people/enrich API to get their
- * professional headline and pastes it into the 'contact_summary' column.
- */
 function enrichContactsFromApollo() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -18,7 +10,6 @@ function enrichContactsFromApollo() {
   }
 
   const headers = conSh.getRange(1, 1, 1, conSh.getLastColumn()).getValues()[0];
-  // TINY CHANGE 1: Look for the 'apollo_person_id' column
   const personIdColIdx = headers.indexOf('apollo_person_id');
   const summaryColIdx = headers.indexOf('contact_summary');
 
@@ -32,7 +23,7 @@ function enrichContactsFromApollo() {
   allContacts.forEach((row, index) => {
     if (row[0] === true) {
       selectedContacts.push({
-        personId: row[personIdColIdx], // TINY CHANGE 2: Get the ID from the correct column
+        personId: row[personIdColIdx],
         rowIndex: index + 2
       });
     }
@@ -51,16 +42,27 @@ function enrichContactsFromApollo() {
   ss.toast('Enriching contacts from Apollo... Please wait.', 'Processing...', -1);
 
   selectedContacts.forEach(contact => {
-    if (contact.personId) { // TINY CHANGE 3: Check for and use the personId
+    if (contact.personId) {
       try {
         const url = 'https://api.apollo.io/v1/people/enrich';
         const payload = { id: contact.personId };
         const data = apolloPost_(url, payload);
 
-        const headline = data.person && data.person.headline ? data.person.headline : '';
+        if (data.person) {
+          // Create the JSON object with all the rich context
+          const enrichmentData = {
+            headline: data.person.headline || '',
+            employment_history: data.person.employment_history || [],
+            company_summary: data.person.organization ? (data.person.organization.short_description || '') : '',
+            company_technologies: data.person.organization ? (data.person.organization.technology_names || []) : []
+          };
 
-        conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(headline);
-        processedCount++;
+          // Convert the object to a JSON string and save it to the sheet
+          const jsonString = JSON.stringify(enrichmentData, null, 2); // The '2' makes it nicely formatted
+          conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(jsonString);
+          processedCount++;
+        }
+
       } catch (e) {
         console.error(`Failed to enrich contact with Person ID ${contact.personId}: ${e.message}`);
         conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(`Error`);
