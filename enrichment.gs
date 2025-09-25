@@ -18,21 +18,22 @@ function enrichContactsFromApollo() {
   }
 
   const headers = conSh.getRange(1, 1, 1, conSh.getLastColumn()).getValues()[0];
-  const apolloIdColIdx = headers.indexOf('apollo_contact_id');
-  const summaryColIdx = headers.indexOf('contact_summary'); // The new column
+  // TINY CHANGE 1: Look for the 'apollo_person_id' column
+  const personIdColIdx = headers.indexOf('apollo_person_id');
+  const summaryColIdx = headers.indexOf('contact_summary');
 
-  if (apolloIdColIdx === -1 || summaryColIdx === -1) {
-    ui.alert('Error: Could not find required columns "apollo_contact_id" or "contact_summary".');
+  if (personIdColIdx === -1 || summaryColIdx === -1) {
+    ui.alert('Error: Could not find required columns "apollo_person_id" or "contact_summary".');
     return;
   }
 
   const allContacts = conSh.getRange(2, 1, conSh.getLastRow() - 1, conSh.getLastColumn()).getValues();
   const selectedContacts = [];
   allContacts.forEach((row, index) => {
-    if (row[0] === true) { // Checkbox is ticked
+    if (row[0] === true) {
       selectedContacts.push({
-        apolloId: row[apolloIdColIdx],
-        rowIndex: index + 2 // 1-based index for sheet ranges
+        personId: row[personIdColIdx], // TINY CHANGE 2: Get the ID from the correct column
+        rowIndex: index + 2
       });
     }
   });
@@ -42,7 +43,7 @@ function enrichContactsFromApollo() {
     return;
   }
 
-  const response = ui.alert('Enrich Contacts from Apollo?', `This will enrich ${selectedContacts.length} selected contacts and may incur Apollo API costs. Continue?`, ui.ButtonSet.YES_NO);
+  const response = ui.alert('Enrich Contacts from Apollo?', `This will enrich ${selectedContacts.length} selected contacts. Continue?`, ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) return;
 
   let processedCount = 0;
@@ -50,21 +51,19 @@ function enrichContactsFromApollo() {
   ss.toast('Enriching contacts from Apollo... Please wait.', 'Processing...', -1);
 
   selectedContacts.forEach(contact => {
-    if (contact.apolloId) {
+    if (contact.personId) { // TINY CHANGE 3: Check for and use the personId
       try {
         const url = 'https://api.apollo.io/v1/people/enrich';
-        const payload = { id: contact.apolloId };
-        const data = apolloPost_(url, payload); // We re-use the apolloPost_ helper
+        const payload = { id: contact.personId };
+        const data = apolloPost_(url, payload);
 
-        // Extract the headline from the response
-        const headline = data.person && data.person.headline ? data.person.headline : 'No headline found.';
+        const headline = data.person && data.person.headline ? data.person.headline : '';
 
-        // Write the headline to the sheet
         conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(headline);
         processedCount++;
       } catch (e) {
-        console.error(`Failed to enrich contact ${contact.apolloId}: ${e.message}`);
-        conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(`Error: ${e.message}`);
+        console.error(`Failed to enrich contact with Person ID ${contact.personId}: ${e.message}`);
+        conSh.getRange(contact.rowIndex, summaryColIdx + 1).setValue(`Error`);
         errorCount++;
       }
     }
