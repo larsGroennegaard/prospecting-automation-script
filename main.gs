@@ -14,19 +14,18 @@ function onOpen() {
       .addItem('Rebuild Content Library', 'cl_buildLibrary');
 
 ui.createMenu('Prospecting')
-    .addItem('1) Fetch HS Companies (marked)', 'hsFetchMarkedCompaniesToSheet')
-    .addItem('2) Find Contacts in Apollo', 'apolloFindContactsForAccounts')
-    .addItem('Step 2b: Find & Verify Contacts (New)', 'apolloFindAndVerifyContactsForAccounts') // Our new menu item
+    .addItem('Fetch HS Companies (marked)', 'hsFetchMarkedCompaniesToSheet')
+    .addItem('Find & Verify Contacts (New)', 'apolloFindAndVerifyContactsForAccounts') // Our new menu item
 
-    .addItem('2.5) Assign Senders for Rotation', 'assignSendersForRotation')
+    .addItem('Assign Senders for Rotation', 'assignSendersForRotation')
     .addSeparator()
     .addItem('Enrich: Get Account Stories from BQ', 'enrichFromDataWarehouse')
     .addItem('Enrich: Get Contact Journeys from BQ', 'enrichContactsFromBigQuery')
     .addItem('Enrich: Get Contact Bios from Apollo', 'enrichContactsFromApollo') // <-- NEW ITEM
     .addSeparator()
-    .addItem('3) Generate AI Messages', 'generateAiMessages')
-    .addItem('4) Push AI Messages to Apollo', 'apolloPushMessages')
-    .addItem('5) Add Contacts to Apollo Sequence', 'apolloAddContactsToSequence')
+    .addItem('Generate AI Messages', 'generateAiMessages')
+    .addItem('Push AI Messages to Apollo', 'apolloPushMessages')
+    .addItem('Add Contacts to Apollo Sequence', 'apolloAddContactsToSequence')
     .addSeparator()
     .addSubMenu(adminMenu)
     .addToUi();
