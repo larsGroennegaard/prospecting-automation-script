@@ -90,188 +90,6 @@ function apolloSaveAsContact_(personId) {
   return apolloPost_(url, payload);
 }
 
-function apolloFindContactsForAccounts() {
-  const ui = SpreadsheetApp.getUi();
-
-  const accSh = ensureAccountsHeader_();
-  const conSh = ensureContactsHeader_();
-
-  // --- FIX #1: Use the correct endpoints ---
-  const SEARCH_URL = 'https://api.apollo.io/v1/mixed_people/search';
-  const ORGS_SEARCH_URL = 'https://api.apollo.io/v1/accounts/search'; // Changed from /organizations/search
-  
-  const stageMap = getApolloStageMap_();
-  
-  const allowedStages = getCfgList_('APOLLO_ALLOWED_STAGES').map(s => s.toLowerCase());
-  allowedStages.push('');
-
-  const accRows = accSh.getRange(2, 1, Math.max(0, accSh.getLastRow() - 1), 4).getValues();
-  const accounts = accRows
-    .filter(r => r[0] === true)
-    .map(r => ({ domain: String(r[3] || '').toLowerCase().trim(), name: String(r[2] || '').trim() }))
-    .filter(a => a.domain);
-
-  if (!accounts.length) {
-    ui.alert('No selected accounts with domains.');
-    return;
-  }
-
-  const existing = new Set();
-  if (conSh.getLastRow() >= 2) {
-    const vals = conSh.getRange(2, 1, conSh.getLastRow() - 1, 7).getValues();
-    vals.forEach(r => {
-      const domain = String(r[1] || '').toLowerCase();
-      const email = String(r[5] || '').toLowerCase();
-      const apolloId = String(r[6] || '').toLowerCase();
-      if (domain && (email || apolloId)) existing.add(`${domain}::${email || apolloId}`);
-    });
-  }
-
-  const headers = { 'x-api-key': cfg_('APOLLO_API_KEY'), 'Content-Type': 'application/json' };
-  
-  const fTitles = getCfgList_('APOLLO_TITLES');
-  const includeSimilarTitles = (() => {
-    try { return String(cfg_('APOLLO_INCLUDE_SIMILAR_TITLES')).toLowerCase() === 'true'; } 
-    catch (e) { return false; }
-  })();
-
-  function buildSearchPayload(base) {
-    const payload = Object.assign({
-      page: 1, per_page: 100,
-      person_titles: fTitles.length ? fTitles : undefined,
-    }, base);
-    
-    // --- FIX #2: Use the correct parameter name for domain search ---
-    if (payload.q_organization_domains) {
-      payload.q_organization_domains_list = payload.q_organization_domains;
-      delete payload.q_organization_domains;
-    }
-    
-    if (payload.person_titles && includeSimilarTitles) payload.include_similar_titles = true;
-    return payload;
-  }
-
-  // Helper functions processResults and appendRows remain the same as your current version
-  function processResults(results, domain) {
-    const rows = [];
-    const placeholderEmail = 'email_not_unlocked@domain.com';
-    for (const p of results) {
-      const apolloId = String(p.id || '').trim();
-      let email = String(p.email || '').toLowerCase();
-      const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || 'N/A';
-      const isContact = p.is_apollo_contact;
-      const status = isContact ? 'from_apollo_contact' : 'from_apollo_person';
-      if (!email && !apolloId) continue;
-      if (email === placeholderEmail) email = '';
-      const title = p.title || '';
-      const stageId = p.contact_stage_id || '';
-      const stage = stageId ? (stageMap.get(stageId) || stageId) : '';
-      const hubspotId = p.hubspot_vid || '';
-      const key = `${domain}::${email || apolloId}`;
-      if (existing.has(key)) continue;
-      const originalEmail = String(p.email || '').toLowerCase();
-      rows.push([true, domain, name, title, stage, originalEmail, apolloId, hubspotId, '', '', '', status, '', '', '', '', '', '']);
-      existing.add(key);
-    }
-    return rows;
-  }
-
-  let totalAppended = 0;
-  for (const acc of accounts) {
-    const { domain, name } = acc;
-    console.log(`\n\n=== Starting Apollo search for company: "${name}" (domain: "${domain}") ===`);
-    
-    let allPotentialContacts = [];
-    let searchPayloadBase = { q_organization_domains: [domain] }; // Start with old key, buildSearchPayload will fix it
-
-    let page = 1;
-    while (true) {
-      try {
-        const payload = buildSearchPayload({ ...searchPayloadBase, page });
-        const data = httpJson_(SEARCH_URL, { method: 'post', headers, payload: JSON.stringify(payload) });
-        
-        const contacts = (data.contacts || []).map(c => ({...c, is_apollo_contact: true}));
-        const people = (data.people || []).map(p => ({...p, is_apollo_contact: false}));
-        const results = contacts.concat(people);
-        if (results.length > 0) allPotentialContacts.push(...results);
-        
-        const pg = data.pagination || {};
-        if (pg.page && pg.total_pages && pg.page < pg.total_pages) {
-          page++;
-        } else {
-          if (allPotentialContacts.length === 0 && !searchPayloadBase.organization_ids) {
-            console.log(`No results via domain search. Trying to find organization ID...`);
-            let org = null;
-            try {
-              // Note: The org search here doesn't use the domain, but the name, as per your successful curl.
-              // We'll prioritize the name search.
-              if (name) {
-                 const orgsByNameData = httpJson_(ORGS_SEARCH_URL, { method: 'post', headers, payload: JSON.stringify({ q_organization_name: name }) });
-                 org = orgsByNameData.accounts && orgsByNameData.accounts[0]; // Look for 'accounts' array
-              }
-            } catch(e) { console.error(`Error while finding Organization ID: ${e.message}`); }
-            
-            if (org) {
-              console.log(`Found Org match: id=${org.id}, name="${org.name}". Restarting search with Org ID.`);
-              searchPayloadBase = { organization_ids: [org.id] };
-              page = 1;
-              continue;
-            }
-          }
-          break;
-        }
-      } catch (e) { console.error(e); break; }
-    }
-    
-    // The rest of the function (filtering, sorting, enriching, appending) remains the same.
-    console.log(`Found ${allPotentialContacts.length} total potential contacts for ${domain}.`);
-
-    const stageFilteredContacts = allPotentialContacts.filter(p => {
-      const stageId = p.contact_stage_id || '';
-      const stageName = stageId ? (stageMap.get(stageId) || '') : '';
-      return allowedStages.includes(stageName.toLowerCase());
-    });
-    console.log(`After stage filtering: ${stageFilteredContacts.length} contacts remain.`);
-
-    const placeholderEmail = 'email_not_unlocked@domain.com';
-    const sortedContacts = stageFilteredContacts.sort((a, b) => {
-      const aHasEmail = a.email && a.email !== placeholderEmail;
-      const bHasEmail = b.email && b.email !== placeholderEmail;
-      return aHasEmail === bHasEmail ? 0 : aHasEmail ? -1 : 1;
-    });
-
-    const rowsToAdd = [];
-    for (const p of sortedContacts) {
-      if (rowsToAdd.length >= 5) break;
-      let finalPerson = p;
-      let email = String(p.email || '').toLowerCase();
-      let isNowAContact = p.is_apollo_contact;
-      if (!email || email === placeholderEmail) {
-        try {
-          const enrichedData = apolloEnrichPerson_(p.id);
-          if (enrichedData.person && enrichedData.person.email) {
-            finalPerson = { ...p, ...enrichedData.person };
-            try { apolloSaveAsContact_(finalPerson.id); isNowAContact = true; } 
-            catch (saveError) { /* ignore */ }
-          } else { continue; }
-        } catch (e) { continue; }
-      }
-      
-      const finalEmail = String(finalPerson.email || '').toLowerCase();
-      if (!finalEmail || finalEmail === placeholderEmail) continue;
-      
-      const processedRows = processResults([ {...finalPerson, is_apollo_contact: isNowAContact} ], domain);
-      if (processedRows.length > 0) rowsToAdd.push(...processedRows);
-    }
-
-    if (rowsToAdd.length > 0) {
-      conSh.getRange(conSh.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
-      totalAppended += rowsToAdd.length;
-    }
-  }
-  ui.alert(`Apollo contact search complete. Appended a total of ${totalAppended} new contacts.`);
-}
-
 function apolloPushMessages() {
   const ui = SpreadsheetApp.getUi();
   const conSh = SpreadsheetApp.getActive().getSheetByName(CON_SHEET);
@@ -405,4 +223,169 @@ function apolloAddContactsToSequence() {
     SpreadsheetApp.flush();
   }
   ui.alert(`Sequence enrollment complete.\n\nAdded: ${totalSuccess}\nFailed/Skipped: ${totalFailed}`);
+}
+
+
+
+function apolloFindContactsForAccounts() {
+  const ui = SpreadsheetApp.getUi();
+
+  const accSh = ensureAccountsHeader_();
+  const conSh = ensureContactsHeader_();
+
+  const SEARCH_URL = 'https://api.apollo.io/v1/mixed_people/search';
+  const ORGS_SEARCH_URL = 'https://api.apollo.io/v1/accounts/search';
+  
+  const stageMap = getApolloStageMap_();
+  
+  const allowedStages = getCfgList_('APOLLO_ALLOWED_STAGES').map(s => s.toLowerCase());
+  allowedStages.push('');
+
+  const accRows = accSh.getRange(2, 1, Math.max(0, accSh.getLastRow() - 1), 4).getValues();
+  const accounts = accRows
+    .filter(r => r[0] === true)
+    .map(r => ({ domain: String(r[3] || '').toLowerCase().trim(), name: String(r[2] || '').trim() }))
+    .filter(a => a.domain);
+
+  if (!accounts.length) {
+    ui.alert('No selected accounts with domains.');
+    return;
+  }
+
+  const existing = new Set();
+  if (conSh.getLastRow() >= 2) {
+    const vals = conSh.getRange(2, 1, conSh.getLastRow() - 1, 7).getValues();
+    vals.forEach(r => {
+      const email = String(r[5] || '').toLowerCase();
+      if (email) existing.add(email);
+    });
+  }
+
+  const headers = { 'x-api-key': cfg_('APOLLO_API_KEY'), 'Content-Type': 'application/json' };
+  
+  const fTitles = getCfgList_('APOLLO_TITLES');
+  const includeSimilarTitles = String(cfg_('APOLLO_INCLUDE_SIMILAR_TITLES')).toLowerCase() === 'true';
+
+  function buildSearchPayload(base) {
+    const payload = Object.assign({
+      page: 1, per_page: 100,
+      person_titles: fTitles.length ? fTitles : undefined,
+    }, base);
+    
+    if (payload.organization_domains) {
+      payload.q_organization_domains = payload.organization_domains;
+      delete payload.organization_domains;
+    }
+    
+    if (payload.person_titles && includeSimilarTitles) payload.include_similar_titles = true;
+    return payload;
+  }
+
+  function processResults(people, domain) {
+    const rows = [];
+    for (const p of people) {
+      let email = String(p.email || '').toLowerCase();
+      if (!email || existing.has(email)) continue;
+      
+      const contactId = p.contact ? p.contact.id : null;
+      const personId = p.id; // <-- TINY CHANGE 1: We get the person_id here.
+
+      rows.push([
+        true, // selected
+        domain, // company_domain
+        p.name || 'N/A', // contact_name
+        p.title || '', // title
+        p.contact && p.contact.contact_stage_id ? (stageMap.get(p.contact.contact_stage_id) || '') : '', // stage
+        email, // email
+        contactId, // apollo_contact_id
+        personId, // <-- TINY CHANGE 2: We add the person_id to the row.
+        p.contact ? p.contact.hubspot_vid : '', // hubspot_contact_id
+      ]);
+      existing.add(email);
+    }
+    return rows;
+  }
+
+  let totalAppended = 0;
+  for (const acc of accounts) {
+    const { domain, name } = acc;
+    console.log(`\n\n=== Starting Apollo search for company: "${name}" (domain: "${domain}") ===`);
+    
+    let allPotentialPeople = [];
+    let searchPayloadBase = { organization_domains: [domain] };
+
+    let page = 1;
+    while (true) {
+      try {
+        const payload = buildSearchPayload({ ...searchPayloadBase, page });
+        const data = httpJson_(SEARCH_URL, { method: 'post', headers, payload: JSON.stringify(payload) });
+        
+        const people = (data.people || []);
+        if (people.length > 0) allPotentialPeople.push(...people);
+        
+        const pg = data.pagination || {};
+        if (pg.page && pg.total_pages && pg.page < pg.total_pages) {
+          page++;
+        } else {
+          if (allPotentialPeople.length === 0 && !searchPayloadBase.organization_ids) {
+            console.log(`No results via domain search for ${domain}. Trying by name: ${name}`);
+            let org = null;
+            try {
+              if (name) {
+                 const orgsData = httpJson_(ORGS_SEARCH_URL, { method: 'post', headers, payload: JSON.stringify({ q_organization_name: name }) });
+                 org = orgsData.accounts && orgsData.accounts[0];
+              }
+            } catch(e) { console.error(`Error while finding Organization ID: ${e.message}`); }
+            
+            if (org) {
+              console.log(`Found Org match: id=${org.id}. Restarting search with Org ID.`);
+              searchPayloadBase = { organization_ids: [org.id] };
+              allPotentialPeople = [];
+              page = 1;
+              continue;
+            }
+          }
+          break;
+        }
+      } catch (e) { console.error(e); break; }
+    }
+    
+    console.log(`Found ${allPotentialPeople.length} total potential people for ${domain}.`);
+
+    const stageFiltered = allPotentialPeople.filter(p => {
+        const stageId = p.contact ? p.contact.contact_stage_id : null;
+        const stageName = stageId ? (stageMap.get(stageId) || '') : '';
+        return allowedStages.includes(stageName.toLowerCase());
+    });
+
+    const sorted = stageFiltered.sort((a, b) => (a.email ? -1 : 1));
+
+    const finalPeople = [];
+    for (const p of sorted) {
+      if (finalPeople.length >= 5) break;
+      if (p.email && !existing.has(p.email.toLowerCase())) {
+        finalPeople.push(p);
+      } else if (!p.email) {
+        try {
+          const enriched = apolloEnrichPerson_(p.id);
+          if (enriched.person && enriched.person.email && !existing.has(enriched.person.email.toLowerCase())) {
+            finalPeople.push(enriched.person);
+          }
+        } catch (e) { /* ignore enrich error */ }
+      }
+    }
+    
+    const personIdsToSave = finalPeople.filter(p => !p.contact).map(p => p.id);
+    if (personIdsToSave.length > 0) {
+        try { apolloSaveAsContact_(personIdsToSave); }
+        catch (e) { console.error("Failed to save some people as contacts", e); }
+    }
+
+    const rowsToAdd = processResults(finalPeople, domain);
+    if (rowsToAdd.length > 0) {
+      conSh.getRange(conSh.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
+      totalAppended += rowsToAdd.length;
+    }
+  }
+  ui.alert(`Apollo contact search complete. Appended a total of ${totalAppended} new contacts.`);
 }
