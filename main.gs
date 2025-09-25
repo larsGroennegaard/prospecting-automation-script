@@ -16,6 +16,8 @@ function onOpen() {
 ui.createMenu('Prospecting')
     .addItem('1) Fetch HS Companies (marked)', 'hsFetchMarkedCompaniesToSheet')
     .addItem('2) Find Contacts in Apollo', 'apolloFindContactsForAccounts')
+    .addItem('Step 2b: Find & Verify Contacts (New)', 'apolloFindAndVerifyContactsForAccounts') // Our new menu item
+
     .addItem('2.5) Assign Senders for Rotation', 'assignSendersForRotation')
     .addSeparator()
     .addItem('Enrich: Get Account Stories from BQ', 'enrichFromDataWarehouse')
