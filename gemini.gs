@@ -83,8 +83,15 @@ function generateAiMessages() {
         finalPrompt = finalPrompt.replace(new RegExp(key, 'g'), placeholders[key]);
       }
       
+      // --- LOGGING 4: See the exact prompt being sent to the AI ---
+      console.log('--> Final prompt sent to AI:\n', finalPrompt);
+
+
       const jsonResponseString = geminiGenerate_(finalPrompt);
       
+      // --- LOGGING 5: See the raw response from the AI ---
+      console.log('<-- Raw response from AI:\n', jsonResponseString);
+
       let outputs = ['Error', 'Error', 'Error', 'Error', 'Error', 'Error'];
       try {
         const jsonMatch = jsonResponseString.match(/\[[\s\S]*\]|{[\s\S]*}/);
