@@ -55,16 +55,17 @@ function generateAiMessages() {
     
     const assignedSenderName = row[assignedSenderNameColIdx];
 
+    if (isSelected && subjectCell === '' && assignedSenderName) {
       const placeholders = {
         '{contact_name}': row[2],
         '{title}': row[3],
         '{stage}': row[4],
         '{company_domain}': row[1],
-        '{contact_story_30_days}': row[9] || 'No specific contact journey data available.',
-        '{contact_summary}': row[10] || 'No contact summary available.', // <--- ADD THIS LINE
+        '{contact_story_30_days}': row[8] || 'No specific contact journey data available.',
+        '{contact_summary}': row[10] || 'No contact summary available.',
         '{my_company_name}': myCompanyName,
         '{my_value_proposition}': myValueProp,
-        '{email_sender}': assignedSenderName,
+        '{email_sender}': assignedSenderName, // This will no longer be overwritten
         '{content_library}': contentLibraryJson,
         '{dreamdata_positioning}': dreamdataPositioning,
         '{dreamdata_use_cases}': dreamdataUseCases,
