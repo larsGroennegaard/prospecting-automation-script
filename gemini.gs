@@ -68,6 +68,7 @@ function generateAiMessages() {
         '{content_library}': contentLibraryJson,
         '{dreamdata_positioning}': dreamdataPositioning,
         '{dreamdata_use_cases}': dreamdataUseCases,
+        '{contact_summary}': row[10] || 'No contact summary available.',
       };
 
       const companyInfo = companyData.get(String(row[1]).toLowerCase().trim()) || {};
