@@ -51,11 +51,14 @@ function generateAiMessages() {
     });
   }
 
-  let processedCount = 0;
+  // --- START: PARALLEL PROCESSING MODIFICATION ---
+
+  let promptsToProcess = [];
+  let rowsToUpdate = []; // Store the original row objects and their index
+
   allContacts.forEach((row, index) => {
     const isSelected = row[0];
     const subjectCell = row[12];
-    
     const assignedSenderName = row[assignedSenderNameColIdx];
 
     if (isSelected && subjectCell === '' && assignedSenderName) {
@@ -84,9 +87,25 @@ function generateAiMessages() {
       for (const key in placeholders) {
         finalPrompt = finalPrompt.replace(new RegExp(key, 'g'), placeholders[key]);
       }
-      
-      const jsonResponseString = geminiGenerate_(finalPrompt);
-      
+
+   // =======================================================
+      // ==> ADD THIS LINE HERE TO LOG EACH PROMPT <==
+      console.log(`Prompt for row ${index + 2}:`, finalPrompt);
+      // =======================================================
+
+
+      promptsToProcess.push(finalPrompt);
+      rowsToUpdate.push({ index: index, rowData: row }); // Store original index and data
+    } else if (isSelected && subjectCell === '' && !assignedSenderName) {
+      conSh.getRange(index + 2, 12).setValue('skipped_no_sender_assigned');
+    }
+  });
+
+  if (promptsToProcess.length > 0) {
+    const jsonResponses = geminiGenerateBatch_(promptsToProcess);
+
+    jsonResponses.forEach((jsonResponseString, i) => {
+      const originalIndex = rowsToUpdate[i].index;
       let outputs = ['Error', 'Error', 'Error', 'Error', 'Error', 'Error'];
       try {
         const jsonMatch = jsonResponseString.match(/\[[\s\S]*\]|{[\s\S]*}/);
@@ -101,15 +120,66 @@ function generateAiMessages() {
         } else { outputs[0] = 'Error: Invalid JSON structure'; outputs[1] = jsonResponseString; }
       } catch (e) { outputs[0] = 'Error: Could not parse AI response'; outputs[1] = jsonResponseString; }
       
-      conSh.getRange(index + 2, 13, 1, 6).setValues([outputs]);
-      processedCount++;
-    } else if (isSelected && subjectCell === '' && !assignedSenderName) {
-        conSh.getRange(index + 2, 12).setValue('skipped_no_sender_assigned');
-    }
-  });
-  ui.alert('AI sequence generation complete.', `Processed ${processedCount} selected contacts.`, ui.ButtonSet.OK);
+      conSh.getRange(originalIndex + 2, 13, 1, 6).setValues([outputs]);
+    });
+  }
+  
+  // --- END: PARALLEL PROCESSING MODIFICATION ---
+  
+  ui.alert('AI sequence generation complete.', `Processed ${promptsToProcess.length} selected contacts.`, ui.ButtonSet.OK);
 }
 
+
+/**
+ * NEW function to handle parallel API requests.
+ */
+function geminiGenerateBatch_(prompts) {
+  const apiKey = cfg_('GEMINI_API_KEY');
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const requests = prompts.map(prompt => {
+    const payload = {
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 1,
+        topP: 1,
+        maxOutputTokens: 8192,
+      },
+    };
+    return {
+      url: url,
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    };
+  });
+
+  const responses = UrlFetchApp.fetchAll(requests);
+
+  return responses.map(response => {
+    try {
+      const responseBody = response.getContentText();
+      const json = JSON.parse(responseBody);
+      if (json.candidates && json.candidates[0].content.parts[0].text) {
+        return json.candidates[0].content.parts[0].text.trim();
+      } else {
+        console.error('Gemini API Error: Invalid response structure.', responseBody);
+        return `Error: ${json.error ? json.error.message : 'Invalid response'}`;
+      }
+    } catch (e) {
+      console.error('Gemini API call failed.', e);
+      return `Error: ${e.message}`;
+    }
+  });
+}
+
+/**
+ * ORIGINAL function, left unchanged.
+ */
 function geminiGenerate_(prompt) {
   const apiKey = cfg_('GEMINI_API_KEY');
   
@@ -124,8 +194,6 @@ function geminiGenerate_(prompt) {
       topK: 1,
       topP: 1,
       maxOutputTokens: 8192,
-      // --- THE FIX: Removed the unsupported parameter ---
-      // response_mime_type: "application/json", 
     },
   };
 
