@@ -33,6 +33,8 @@ function generateAiMessages() {
   const myValueProp = cfg_('MY_VALUE_PROPOSITION');
   const dreamdataPositioning = (() => { try { return cfg_('DREAMDATA_POSITIONING'); } catch(e) { return 'A B2B Attribution Platform.'; } })();
   const dreamdataUseCases = (() => { try { return cfg_('DREAMDATA_USE_CASES'); } catch(e) { return 'No use cases provided.'; } })();
+  const dreamdataPersonas = (() => { try { return cfg_('DREAMDATA_PERSONAS'); } catch(e) { return 'No personas provided.'; } })();
+
   const contentLibraryJson = getContentLibrary_();
 
   const companyData = new Map();
@@ -75,6 +77,8 @@ function generateAiMessages() {
         '{content_library}': contentLibraryJson,
         '{dreamdata_positioning}': dreamdataPositioning,
         '{dreamdata_use_cases}': dreamdataUseCases,
+        '{dreamdata_personas}': dreamdataPersonas,
+
       };
 
       const companyInfo = companyData.get(String(row[1]).toLowerCase().trim()) || {};
