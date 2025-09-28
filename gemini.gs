@@ -139,7 +139,7 @@ function generateAiMessages() {
  */
 function geminiGenerateBatch_(prompts) {
   const apiKey = cfg_('GEMINI_API_KEY');
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-pro:generateContent?key=${apiKey}`;
 
   const requests = prompts.map(prompt => {
     const payload = {
