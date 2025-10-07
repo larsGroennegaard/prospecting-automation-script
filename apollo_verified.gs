@@ -187,9 +187,9 @@ function apolloSavePersonAsContact_(personId) {
     
     if (statusCode === 200 || statusCode === 201) {
       const data = JSON.parse(responseBody);
-      return data.contacts && data.contacts.length > 0 ? data.contacts[0] : null;
+      // FIX: Apollo returns "contact" (singular), not "contacts" (plural)
+      return data.contact && data.contact.id ? data.contact : null;
     } else {
-      // Log the actual error response
       console.error(`Apollo Save Contact FAILED (Status: ${statusCode}): ${responseBody}`);
       return null;
     }
