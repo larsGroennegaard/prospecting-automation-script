@@ -94,11 +94,13 @@ function apolloFindAndVerifyContactsForAccounts() {
           if (personDetails) personCache.put(personId, JSON.stringify(personDetails), 3600);
         }
 
-        if (personDetails && personDetails.person && personDetails.person.organization && personDetails.person.organization.name) {
+        if (personDetails && personDetails.person && personDetails.person.organization ) {
           const currentPerson = personDetails.person;
           const currentCompanyName = currentPerson.organization.name;
+          const currentOrgId = currentPerson.organization.id;  // ← ADD THIS LINE
 
-          if (normalizeString_(currentCompanyName) === normalizeString_(companyName)) {
+
+          if (currentOrgId === orgId) {
             console.log(`[${companyName}]   - SUCCESS: ${currentPerson.name} is verified.`);
             const email = apolloEnrichAndGetEmail_(currentPerson.id);
 
@@ -156,7 +158,7 @@ function apolloFindAndVerifyContactsForAccounts() {
 }
 
 // =================================================================================================
-// HELPER FUNCTIONS (No changes were made to the helpers)
+// HELPER FUNCTIONS 
 // =================================================================================================
 
 function apolloSavePersonAsContact_(personId) {
@@ -179,13 +181,18 @@ function apolloSavePersonAsContact_(personId) {
   try {
     const response = UrlFetchApp.fetch(url, options);
     const responseBody = response.getContentText();
-    console.log(`<-- Apollo Save Contact Response (Status: ${response.getResponseCode()})`);
-
-    if (response.getResponseCode() === 200 || response.getResponseCode() === 201) {
+    const statusCode = response.getResponseCode();
+    
+    console.log(`<-- Apollo Save Contact Response (Status: ${statusCode})`);
+    
+    if (statusCode === 200 || statusCode === 201) {
       const data = JSON.parse(responseBody);
       return data.contacts && data.contacts.length > 0 ? data.contacts[0] : null;
+    } else {
+      // Log the actual error response
+      console.error(`Apollo Save Contact FAILED (Status: ${statusCode}): ${responseBody}`);
+      return null;
     }
-    return null;
   } catch (e) {
     console.error(`Error in apolloSavePersonAsContact_: ${e.message}`);
     return null;
