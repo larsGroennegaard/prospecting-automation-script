@@ -113,7 +113,7 @@ function apolloFindAndVerifyContactsForAccounts() {
                   contactId = candidate.id;
                   console.log(`[${companyName}]       -> SUCCESS: Person is already a contact with ID: ${contactId}`);
               } else {
-                  const newContact = apolloSavePersonAsContact_(personId);
+                  const newContact = apolloSavePersonAsContact_(personId, currentPerson, email);
                   if (newContact && newContact.id) {
                       contactId = newContact.id;
                       console.log(`[${companyName}]       -> SUCCESS: Saved as new Contact with ID: ${contactId}`);
@@ -161,13 +161,19 @@ function apolloFindAndVerifyContactsForAccounts() {
 // HELPER FUNCTIONS 
 // =================================================================================================
 
-function apolloSavePersonAsContact_(personId) {
+function apolloSavePersonAsContact_(personId, personData, email) {
   const apiKey = cfg_('APOLLO_API_KEY');
   const url = 'https://api.apollo.io/v1/contacts';
   const payload = {
     api_key: apiKey,
-    person_ids: [personId]
+    first_name: personData.first_name,
+    last_name: personData.last_name,
+    email: email,
+    title: personData.title,
+    organization_name: personData.organization?.name,
+    person_id: personId
   };
+  
   const options = {
     method: 'post',
     contentType: 'application/json',
